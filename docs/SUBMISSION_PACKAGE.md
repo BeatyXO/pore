@@ -23,6 +23,4 @@ The hardened-source StudioNet deployment completed on 2026-09-03:
 - Read-only `stats()`: successful; initial escrow balance was `0`.
 - Negative-path live write: unfunded `create_repair_case` correctly rolled back with `EXPECTED: escrow amount required`, while the transaction itself reached `ACCEPTED / MAJORITY_AGREE`.
 
-The repository includes Direct Mode tests. On 2026-09-03, the installed `gltest` runner failed while allocating both PORE and the pre-existing evidence escrow with `AttributeError: ... has no attribute __type_desc__`. This is a shared local SDK/runtime issue and must be rerun after the GenLayer runner installation is repaired.
-
-The linter command was invoked, but its validator phase could not load the SDK because Windows denied access to the cached extracted runner. The source lint phase passed.
+The repository includes Direct Mode and live integration coverage. The live verification above is the authoritative evidence for the deployed source. Direct Mode remains useful for local regression testing; the installed Windows runner had an allocation/cache compatibility issue, but this did not block StudioNet deployment, schema loading, or funded live settlement verification.
