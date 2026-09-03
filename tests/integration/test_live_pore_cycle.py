@@ -42,7 +42,7 @@ def test_live_create_evidence_resolve_cycle(default_account):
         client.wait_for_transaction_receipt = lambda transaction_hash, interval, retries, **kwargs: original_wait(transaction_hash, interval=interval, retries=retries)
     fulfiller = default_account.address
     base = int(json.loads(contract.stats(args=[]).call())["next_intent_id"])
-    opened = contract.create_repair_case(args=[fulfiller, "Repair leaking roof at unit 4", "Before and after visual proof", 1800, 1800, ZERO, ZERO, 0]).transact(value=GEN, transaction_context=context())
+    opened = contract.create_repair_case(args=[fulfiller, "Repair leaking roof at unit 4", "Before and after visual proof", '[{"id":"repair","weight_bps":10000}]', 1800, 1800, ZERO, ZERO, 0]).transact(value=GEN, transaction_context=context())
     assert tx_execution_succeeded(opened)
     evidence = contract.submit_repair_evidence(args=[base, "AFTER_PHOTO", "https://example.com/after.jpg", "after repair photo"]).transact(transaction_context=context())
     assert tx_execution_succeeded(evidence)
