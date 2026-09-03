@@ -12,10 +12,10 @@ The contract is branded PORE (Proof-of-Repair Escrow). The stable class name is 
 
 ## Verification status
 
-StudioNet deployment completed on 2026-09-03:
+The hardened-source StudioNet deployment completed on 2026-09-03:
 
-- Contract: `0x4A8D16452061f130FF9915138d064Ff3B69811cb`
-- Deployment transaction: `0xd03abc9609fdb8aefc7a866cd2d8b4fdd9189954fcab0194157b98c7084a1b5e`
+- Contract: `0x77b3889EDFA5D070F1feB82459650FCC3DDcA05F`
+- Deployment transaction: `0x63ba12375d20c1b5be1ea41eccda648bab91dd6aef30b553aabc27104c85f24b`
 - Status: `ACCEPTED`
 - Result: `MAJORITY_AGREE`
 - Validators: 5 votes revealed; quorum reached in round 0.
