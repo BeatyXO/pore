@@ -164,6 +164,7 @@ class EvidenceGatedIntentEscrow(gl.Contract):
                 "callback_sent": False,
                 "requester_split_approved": False,
                 "fulfiller_split_approved": False,
+                "requested_split_bps": -1,
                 "evidence_count": 0,
                 "last_resolved_at": "",
             },
@@ -314,6 +315,9 @@ class EvidenceGatedIntentEscrow(gl.Contract):
             raise gl.vm.UserError("EXPECTED: split only after inconclusive verdict")
         if requester_bps > u32(BPS_DENOMINATOR):
             raise gl.vm.UserError("EXPECTED: requester bps too high")
+        prior_bps = int(rec.get("requested_split_bps", -1))
+        if prior_bps >= 0 and prior_bps != int(requester_bps):
+            raise gl.vm.UserError("EXPECTED: split bps must match existing proposal")
         if sender == Address(rec["requester"]):
             rec["requester_split_approved"] = True
         else:
@@ -600,8 +604,9 @@ class EvidenceGatedIntentEscrow(gl.Contract):
 
     def _settle_partial(self, intent_id: u256, rec: dict, reason: str) -> None:
         resolution = self._as_dict(self.ledger.get(self._resolution_key(intent_id), "{}"))
-        bps = self._completed_weight(str(rec.get("deliverables", "[]")), resolution.get("completed_deliverables", []))
-        self._settle_split(intent_id, rec, u32(bps), reason)
+        completed_bps = self._completed_weight(str(rec.get("deliverables", "[]")), resolution.get("completed_deliverables", []))
+        requester_bps = BPS_DENOMINATOR - completed_bps
+        self._settle_split(intent_id, rec, u32(requester_bps), reason)
 
     def _settle_split(self, intent_id: u256, rec: dict, requester_bps: u32, reason: str) -> None:
         amount = self._u256(rec.get("escrow_deposited", rec["amount"]))
