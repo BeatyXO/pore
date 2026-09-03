@@ -33,6 +33,8 @@ MAX_POLICY_LEN = 1800
 MAX_EVIDENCE_LEN = 2400
 MAX_NOTES_LEN = 900
 MAX_EVIDENCE_ITEMS = 4
+MAX_FETCHED_BODY_LEN = 12000
+MAX_IMAGE_BYTES = 4000000
 MAX_TIMEOUT_SECONDS = 60 * 60 * 24 * 21
 MIN_TIMEOUT_SECONDS = 60 * 30
 MAX_FEE_BPS = 1000
@@ -139,7 +141,9 @@ class EvidenceGatedIntentEscrow(gl.Contract):
                 "callback": str(callback_addr),
                 "integrator": str(integrator_addr),
                 "amount": str(amount),
+                "escrow_deposited": str(amount),
                 "fulfiller_bond": "0",
+                "bond_deposited": "0",
                 "integrator_fee_bps": int(integrator_fee_bps),
                 "created_at": now_iso,
                 "evidence_deadline": self._add_seconds(now_iso, evidence_timeout_seconds),
@@ -154,6 +158,8 @@ class EvidenceGatedIntentEscrow(gl.Contract):
                 "payout_to_integrator": "0",
                 "settled": False,
                 "callback_sent": False,
+                "requester_split_approved": False,
+                "fulfiller_split_approved": False,
                 "evidence_count": 0,
                 "last_resolved_at": "",
             },
@@ -176,6 +182,7 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         if bool(rec["settled"]):
             raise gl.vm.UserError("EXPECTED: settled intent")
         rec["fulfiller_bond"] = str(self._u256(rec["fulfiller_bond"]) + value)
+        rec["bond_deposited"] = rec["fulfiller_bond"]
         self._write_intent(intent_id, rec)
         self.total_escrowed = self.total_escrowed + value
 
@@ -254,10 +261,10 @@ class EvidenceGatedIntentEscrow(gl.Contract):
             raise gl.vm.UserError("EXPECTED: terminal intent")
         if not self._after(self._now_iso(), str(rec["resolution_deadline"])):
             raise gl.vm.UserError("EXPECTED: resolution deadline active")
+        requester_amount = self._u256(rec.get("escrow_deposited", rec["amount"]))
+        fulfiller_amount = self._u256(rec.get("bond_deposited", rec["fulfiller_bond"]))
         self._mark_settled(intent_id, rec, VERDICT_INCONCLUSIVE, "Deadline passed without conclusive settlement")
         rec = self._intent(intent_id)
-        requester_amount = self._u256(rec["amount"])
-        fulfiller_amount = self._u256(rec["fulfiller_bond"])
         rec["payout_to_requester"] = str(requester_amount)
         rec["payout_to_fulfiller"] = str(fulfiller_amount)
         self._write_intent(intent_id, rec)
@@ -277,30 +284,39 @@ class EvidenceGatedIntentEscrow(gl.Contract):
             raise gl.vm.UserError("EXPECTED: evidence already submitted")
         if bool(rec["settled"]):
             raise gl.vm.UserError("EXPECTED: settled intent")
+        requester_amount = self._u256(rec.get("escrow_deposited", rec["amount"]))
+        fulfiller_amount = self._u256(rec.get("bond_deposited", rec["fulfiller_bond"]))
         self._mark_settled(intent_id, rec, VERDICT_INCONCLUSIVE, "Requester cancelled before evidence")
         rec = self._intent(intent_id)
         rec["status"] = STATUS_CANCELLED
-        rec["payout_to_requester"] = rec["amount"]
-        rec["payout_to_fulfiller"] = rec["fulfiller_bond"]
+        rec["payout_to_requester"] = str(requester_amount)
+        rec["payout_to_fulfiller"] = str(fulfiller_amount)
         self._write_intent(intent_id, rec)
         self.cancelled_intents = self.cancelled_intents + u256(1)
-        self._send_gen(Address(rec["requester"]), self._u256(rec["amount"]))
-        self._send_gen(Address(rec["fulfiller"]), self._u256(rec["fulfiller_bond"]))
-        self.total_refunded = self.total_refunded + self._u256(rec["amount"])
+        self._send_gen(Address(rec["requester"]), requester_amount)
+        self._send_gen(Address(rec["fulfiller"]), fulfiller_amount)
+        self.total_refunded = self.total_refunded + requester_amount
 
     @gl.public.write
     def accept_mutual_repair_settlement(self, intent_id: u256, requester_bps: u32) -> None:
         rec = self._intent(intent_id)
         sender = self._coerce_address(gl.message.sender_address)
-        if sender != Address(rec["requester"]):
-            raise gl.vm.UserError("EXPECTED: only requester can propose split")
+        if sender != Address(rec["requester"]) and sender != Address(rec["fulfiller"]):
+            raise gl.vm.UserError("EXPECTED: only repair parties can approve split")
         if bool(rec["settled"]):
             raise gl.vm.UserError("EXPECTED: settled intent")
         if rec["verdict"] != VERDICT_INCONCLUSIVE and rec["verdict"] != VERDICT_EXTERNAL_FAILURE:
             raise gl.vm.UserError("EXPECTED: split only after inconclusive verdict")
         if requester_bps > u32(BPS_DENOMINATOR):
             raise gl.vm.UserError("EXPECTED: requester bps too high")
-        self._settle_split(intent_id, rec, requester_bps, "Requester accepted deterministic split after inconclusive verdict")
+        if sender == Address(rec["requester"]):
+            rec["requester_split_approved"] = True
+        else:
+            rec["fulfiller_split_approved"] = True
+        rec["requested_split_bps"] = int(requester_bps)
+        self._write_intent(intent_id, rec)
+        if bool(rec["requester_split_approved"]) and bool(rec["fulfiller_split_approved"]):
+            self._settle_split(intent_id, rec, requester_bps, "Both repair parties approved deterministic split")
 
     @gl.public.write
     def send_callback(self, intent_id: u256) -> None:
@@ -377,11 +393,11 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         )
 
     def _judge_evidence(self, spec: str, evidence_policy: str, evidence_bundle: str) -> dict:
-        prompt = self._resolution_prompt(spec, evidence_policy, evidence_bundle)
-
         def leader_fn():
             try:
-                return gl.nondet.exec_prompt(prompt, response_format="json")
+                acquired_text, images = self._acquire_evidence(evidence_bundle)
+                prompt = self._resolution_prompt(spec, evidence_policy, acquired_text)
+                return gl.nondet.exec_prompt(prompt, images=images, response_format="json")
             except gl.vm.UserError:
                 return {
                     "ok": False,
@@ -435,17 +451,60 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         )
 
     def _evidence_bundle(self, intent_id: u256, count: u32) -> str:
-        out = ""
+        items = []
         idx = u32(0)
         while idx < count:
             item = self._as_dict(self.ledger[self._evidence_key(intent_id, idx)])
-            out = out + "\n--- evidence " + str(int(idx)) + " ---\n"
-            out = out + "kind: " + str(item.get("kind", "")) + "\n"
-            out = out + "submitted_at: " + str(item.get("submitted_at", "")) + "\n"
-            out = out + "notes: " + str(item.get("notes", "")) + "\n"
-            out = out + "content_or_uri: " + str(item.get("uri_or_text", "")) + "\n"
+            items.append(item)
             idx = idx + u32(1)
-        return out
+        return json.dumps(items)
+
+    def _acquire_evidence(self, evidence_bundle: str):
+        """Fetch and normalize external evidence inside the nondeterministic block."""
+        items = self._as_list(evidence_bundle)
+        text = ""
+        images = []
+        for item in items:
+            kind = str(item.get("kind", ""))
+            location = str(item.get("uri_or_text", ""))
+            text = text + "\n--- evidence " + kind + " ---\nnotes: " + str(item.get("notes", ""))
+            if kind == EVIDENCE_WEB_TEXT:
+                response = gl.nondet.web.get(location)
+                status = int(getattr(response, "status_code", getattr(response, "status", 200)))
+                if status >= 400:
+                    raise gl.vm.UserError("EXTERNAL: web text fetch failed")
+                body = response.body.decode("utf-8")
+                text = text + "\nweb_text: " + self._compact(body, MAX_FETCHED_BODY_LEN)
+            elif kind == EVIDENCE_WEB_SCREENSHOT:
+                image = gl.nondet.web.render(location, mode="screenshot")
+                if len(image) > MAX_IMAGE_BYTES:
+                    raise gl.vm.UserError("EXTERNAL: screenshot too large")
+                images.append(image)
+                text = text + "\nscreenshot_attached: true"
+            elif kind == EVIDENCE_IMAGE_URL or kind == EVIDENCE_BEFORE_PHOTO or kind == EVIDENCE_AFTER_PHOTO:
+                response = gl.nondet.web.get(location)
+                status = int(getattr(response, "status_code", getattr(response, "status", 200)))
+                if status >= 400:
+                    raise gl.vm.UserError("EXTERNAL: image fetch failed")
+                image = response.body
+                if len(image) > MAX_IMAGE_BYTES:
+                    raise gl.vm.UserError("EXTERNAL: image too large")
+                images.append(image)
+                text = text + "\nimage_attached: true"
+            else:
+                text = text + "\ntext: " + location
+        return text, images
+
+    def _as_list(self, raw):
+        if isinstance(raw, list):
+            return raw
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+                return parsed if isinstance(parsed, list) else []
+            except ValueError:
+                return []
+        return []
 
     def _normalize_resolution(self, raw) -> dict:
         data = self._as_dict(raw)
@@ -484,8 +543,8 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         return {"verdict": VERDICT_INCONCLUSIVE, "reason": "LLM_ERROR: unparseable response"}
 
     def _settle_satisfied(self, intent_id: u256, rec: dict, reason: str) -> None:
-        amount = self._u256(rec["amount"])
-        bond = self._u256(rec["fulfiller_bond"])
+        amount = self._u256(rec.get("escrow_deposited", rec["amount"]))
+        bond = self._u256(rec.get("bond_deposited", rec["fulfiller_bond"]))
         fee = self._fee(amount, u32(int(rec["integrator_fee_bps"])))
         fulfiller_amount = amount - fee + bond
         self._mark_settled(intent_id, rec, VERDICT_SATISFIED, reason)
@@ -499,7 +558,7 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         self.total_fees = self.total_fees + fee
 
     def _settle_not_satisfied(self, intent_id: u256, rec: dict, reason: str) -> None:
-        requester_amount = self._u256(rec["amount"]) + self._u256(rec["fulfiller_bond"])
+        requester_amount = self._u256(rec.get("escrow_deposited", rec["amount"])) + self._u256(rec.get("bond_deposited", rec["fulfiller_bond"]))
         self._mark_settled(intent_id, rec, VERDICT_NOT_SATISFIED, reason)
         rec = self._intent(intent_id)
         rec["payout_to_requester"] = str(requester_amount)
@@ -511,11 +570,11 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         self._settle_split(intent_id, rec, u32(5000), reason)
 
     def _settle_split(self, intent_id: u256, rec: dict, requester_bps: u32, reason: str) -> None:
-        amount = self._u256(rec["amount"])
+        amount = self._u256(rec.get("escrow_deposited", rec["amount"]))
         requester_amount = self._mul_bps(amount, requester_bps)
         fulfiller_base = amount - requester_amount
         fee = self._fee(fulfiller_base, u32(int(rec["integrator_fee_bps"])))
-        fulfiller_amount = fulfiller_base - fee + self._u256(rec["fulfiller_bond"])
+        fulfiller_amount = fulfiller_base - fee + self._u256(rec.get("bond_deposited", rec["fulfiller_bond"]))
         self._mark_settled(intent_id, rec, VERDICT_PARTIAL, reason)
         rec = self._intent(intent_id)
         rec["payout_to_requester"] = str(requester_amount)
@@ -534,6 +593,10 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         rec["verdict"] = verdict
         rec["verdict_reason"] = self._compact(reason, 700)
         rec["settled"] = True
+        # Escrow custody is consumed exactly once; payout methods read locals
+        # before this call, then state is persisted empty before emission.
+        rec["escrow_deposited"] = "0"
+        rec["bond_deposited"] = "0"
         rec["last_resolved_at"] = self._now_iso()
         self._write_intent(intent_id, rec)
         if self.open_intents > u256(0):
