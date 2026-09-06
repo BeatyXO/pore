@@ -39,6 +39,4 @@ I respectfully ask the committee to evaluate this updated version on its current
 - Deployment transaction: `0x66248b3e3eec7b8d35fccb82a97c4d9ed2c4bc9379dfe9270eadb4b3d6df6125`
 - Explorer: https://explorer-studio.genlayer.com/address/0x9aFF0D370feeE662c3a4f1fc115D1c9Bc60F7c70
 
-Respectfully,
-
-The PORE project team
+Thank you for your time and effort!
