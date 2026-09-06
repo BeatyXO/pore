@@ -12,7 +12,7 @@ from gltest_cli.config.general import get_general_config
 
 
 CONTRACT = "EvidenceGatedIntentEscrow"
-DEPLOYED_ADDRESS = "0x9232E691658D6B3Bb04c36857dDBe86fcC7341B6"
+DEPLOYED_ADDRESS = "0x9aFF0D370feeE662c3a4f1fc115D1c9Bc60F7c70"
 ZERO = "0x0000000000000000000000000000000000000000"
 GEN = 10**16
 
@@ -44,9 +44,12 @@ def test_live_create_evidence_resolve_cycle(default_account):
         client.wait_for_transaction_receipt = lambda transaction_hash, interval, retries, **kwargs: original_wait(transaction_hash, interval=interval, retries=retries)
     fulfiller = default_account.address
     base = int(json.loads(contract.stats(args=[]).call())["next_intent_id"])
-    opened = contract.create_repair_case(args=[fulfiller, "Repair leaking roof at unit 4", "Before and after visual proof", '[{"id":"roof","weight_bps":6000},{"id":"panel","weight_bps":4000}]', 1800, 1800, ZERO, ZERO, 0]).transact(value=GEN, transaction_context=context())
+    opened = contract.create_repair_case(args=[fulfiller, "Repair leaking roof at unit 4", "Before and after visual proof", '[{"id":"roof","weight_bps":6000},{"id":"panel","weight_bps":4000}]', 1800, 1800, ZERO, ZERO, 0, 86400]).transact(value=GEN, transaction_context=context())
     assert tx_execution_succeeded(opened)
-    evidence = contract.submit_repair_evidence(args=[base, "TEXT", "Roof sealed and visible leak repaired; panel remains pending.", "repair report"]).transact(transaction_context=context())
+    contract.submit_inspection_report(args=[base, "inspection-hash-001", "inspection complete"]).transact(transaction_context=context())
+    contract.authorize_repair(args=[base, "quote-hash-001"]).transact(transaction_context=context())
+    contract.submit_repair_evidence(args=[base, "BEFORE_PHOTO", "https://example.com/before.jpg", "before photo"]).transact(transaction_context=context())
+    evidence = contract.submit_repair_evidence(args=[base, "AFTER_PHOTO", "https://example.com/after.jpg", "after photo"]).transact(transaction_context=context())
     assert tx_execution_succeeded(evidence)
     resolved = contract.resolve(args=[base]).transact(transaction_context=context("PARTIAL", True, ["roof"]))
     assert tx_execution_succeeded(resolved)
@@ -63,7 +66,7 @@ def test_live_mutual_split_requires_exact_same_bps(default_account):
     factory = ContractFactory(CONTRACT, Path("contracts/pore.py").read_text())
     requester_contract = factory.build_contract(contract_address=DEPLOYED_ADDRESS, account=default_account).connect(default_account)
     base = int(json.loads(requester_contract.stats(args=[]).call())["next_intent_id"])
-    opened = requester_contract.create_repair_case(args=[repairer.address, "Repair panel", "Evidence required", '[{"id":"panel","weight_bps":10000}]', 1800, 1800, ZERO, ZERO, 0]).transact(value=GEN, transaction_context=context())
+    opened = requester_contract.create_repair_case(args=[repairer.address, "Repair panel", "Evidence required", '[{"id":"panel","weight_bps":10000}]', 1800, 1800, ZERO, ZERO, 0, 86400]).transact(value=GEN, transaction_context=context())
     assert tx_execution_succeeded(opened)
     evidence = requester_contract.submit_repair_evidence(args=[base, "TEXT", "ambiguous repair report", "review required"]).transact(transaction_context=context())
     assert tx_execution_succeeded(evidence)

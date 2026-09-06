@@ -21,6 +21,7 @@ def test_pore_deploys_and_records_repair_case(direct_vm, direct_deploy, direct_a
         ZERO,
         ZERO,
         0,
+        86400,
     )
     assert case_id == 1
     assert '"status": "OPEN"' in contract.get_intent(case_id)
@@ -30,7 +31,12 @@ def test_pore_accepts_visual_evidence_kinds(direct_vm, direct_deploy, direct_ali
     contract = direct_deploy(CONTRACT)
     direct_vm.sender = direct_alice
     set_value(direct_vm, GEN)
-    case_id = contract.create_repair_case(direct_bob, "Repair item", "Visual before/after proof", '[{"id":"repair","weight_bps":10000}]', 3600, 7200, ZERO, ZERO, 0)
+    case_id = contract.create_repair_case(direct_bob, "Repair item", "Visual before/after proof", '[{"id":"repair","weight_bps":10000}]', 3600, 7200, ZERO, ZERO, 0, 86400)
     direct_vm.sender = direct_bob
-    contract.submit_repair_evidence(case_id, "IMAGE_URL", "https://example.com/after.jpg", "after photo")
-    assert 'IMAGE_URL' in contract.get_evidence(case_id, 0)
+    contract.submit_inspection_report(case_id, "inspection-hash", "after inspection")
+    direct_vm.sender = direct_alice
+    contract.authorize_repair(case_id, "quote-hash")
+    direct_vm.sender = direct_bob
+    contract.submit_repair_evidence(case_id, "BEFORE_PHOTO", "https://example.com/before.jpg", "before photo")
+    contract.submit_repair_evidence(case_id, "AFTER_PHOTO", "https://example.com/after.jpg", "after photo")
+    assert 'BEFORE_PHOTO' in contract.get_evidence(case_id, 0)

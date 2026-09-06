@@ -1,6 +1,6 @@
 # PORE — Proof-of-Repair Escrow
 
-PORE is a standalone GenLayer Intelligent Contract primitive for escrowed repair work. A sponsor funds a repair case; a repairer submits bounded text, web, rendered-page, or image-URL evidence; validators independently inspect the evidence against an immutable repair specification; and deterministic code settles the escrow.
+PORE is a standalone GenLayer Intelligent Contract primitive for staged repair work. A sponsor funds a case; the parties submit an inspection record, the sponsor authorizes a quoted repair, and the repairer submits bounded before/after evidence. Validators assess the repair record against the inspection and work specification; deterministic code settles the escrow.
 
 PORE is intentionally contract-only and composable. It is suitable for property maintenance, vehicle damage, warranty claims, logistics damage, construction punch lists, and equipment repair.
 
@@ -8,11 +8,11 @@ PORE is intentionally contract-only and composable. It is suitable for property 
 
 - **Network:** GenLayer StudioNet
 - **Chain ID:** `61999`
-- **Contract:** `0x9232E691658D6B3Bb04c36857dDBe86fcC7341B6`
-- **Studio Explorer:** [open PORE on GenLayer Explorer](https://genlayer-explorer.vercel.app/address/0x9232E691658D6B3Bb04c36857dDBe86fcC7341B6)
-- **Deployment transaction:** `0x1016be0464c353651c063e5c253a85e4de26952ba2b3cd1ed44636883a4c4d61`
+- **Contract:** `0x9aFF0D370feeE662c3a4f1fc115D1c9Bc60F7c70`
+- **Studio Explorer:** [open PORE on GenLayer Explorer](https://explorer-studio.genlayer.com/address/0x9aFF0D370feeE662c3a4f1fc115D1c9Bc60F7c70)
+- **Deployment transaction:** `0x66248b3e3eec7b8d35fccb82a97c4d9ed2c4bc9379dfe9270eadb4b3d6df6125`
 
-Current live verification: deployment reached `ACCEPTED / MAJORITY_AGREE` with 5/5 validator votes; schema loading and read-only views succeeded; a funded `PARTIAL` lifecycle settled 60% completed repair work to the repairer and 40% to the requester; and the bilateral mutual-settlement mismatch check rejected a conflicting BPS proposal before accepting the exact matching proposal.
+The redesigned source adds inspection and quote authorization gates before repair evidence is accepted, paired before/after evidence enforcement, a recorded warranty duration, a held warranty reserve, and requester warranty challenges.
 
 ## Consensus design
 

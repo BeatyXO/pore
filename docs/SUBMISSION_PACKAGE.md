@@ -14,8 +14,8 @@ The contract is branded PORE (Proof-of-Repair Escrow). The stable class name is 
 
 The hardened-source StudioNet deployment completed on 2026-09-03:
 
-- Contract: `0x9232E691658D6B3Bb04c36857dDBe86fcC7341B6`
-- Deployment transaction: `0x1016be0464c353651c063e5c253a85e4de26952ba2b3cd1ed44636883a4c4d61`
+- Contract: `0x9aFF0D370feeE662c3a4f1fc115D1c9Bc60F7c70`
+- Deployment transaction: `0x66248b3e3eec7b8d35fccb82a97c4d9ed2c4bc9379dfe9270eadb4b3d6df6125`
 - Status: `ACCEPTED`
 - Result: `MAJORITY_AGREE`
 - Validators: 5 votes revealed; quorum reached in round 0.
@@ -23,4 +23,4 @@ The hardened-source StudioNet deployment completed on 2026-09-03:
 - Read-only `stats()`: successful; initial escrow balance was `0`.
 - Negative-path live write: unfunded `create_repair_case` correctly rolled back with `EXPECTED: escrow amount required`, while the transaction itself reached `ACCEPTED / MAJORITY_AGREE`.
 
-The repository includes Direct Mode and live integration coverage. The live verification above is the authoritative evidence for the deployed source. Direct Mode remains useful for local regression testing; the installed Windows runner had an allocation/cache compatibility issue, but this did not block StudioNet deployment, schema loading, or funded live settlement verification.
+The redesigned repository includes Direct Mode and live integration coverage for inspection → authorization → paired before/after evidence. Direct Mode remains useful for local regression testing; the installed Windows runner has an allocation/cache compatibility issue. The new deployment is the authoritative source for the redesigned appeal.

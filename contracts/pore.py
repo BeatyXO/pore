@@ -5,6 +5,8 @@ import json
 
 
 STATUS_OPEN = "OPEN"
+STATUS_INSPECTION_SUBMITTED = "INSPECTION_SUBMITTED"
+STATUS_REPAIR_AUTHORIZED = "REPAIR_AUTHORIZED"
 STATUS_EVIDENCE_SUBMITTED = "EVIDENCE_SUBMITTED"
 STATUS_RESOLVED = "RESOLVED"
 STATUS_CANCELLED = "CANCELLED"
@@ -40,6 +42,7 @@ MAX_TIMEOUT_SECONDS = 60 * 60 * 24 * 21
 MIN_TIMEOUT_SECONDS = 60 * 30
 MAX_FEE_BPS = 1000
 BPS_DENOMINATOR = 10000
+WARRANTY_HOLD_BPS = 2000
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 
@@ -106,6 +109,7 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         callback: Address,
         integrator: Address,
         integrator_fee_bps: u32,
+        warranty_seconds: u64,
     ) -> u256:
         amount = gl.message.value
         if amount == u256(0):
@@ -132,6 +136,8 @@ class EvidenceGatedIntentEscrow(gl.Contract):
             raise gl.vm.UserError("EXPECTED: fee bps too high")
         if integrator_fee_bps > u32(0) and self._is_zero(integrator_addr):
             raise gl.vm.UserError("EXPECTED: fee recipient required")
+        if warranty_seconds > u64(60 * 60 * 24 * 365):
+            raise gl.vm.UserError("EXPECTED: warranty too long")
 
         intent_id = self.next_intent_id
         self.next_intent_id = self.next_intent_id + u256(1)
@@ -148,6 +154,13 @@ class EvidenceGatedIntentEscrow(gl.Contract):
                 "fulfiller_bond": "0",
                 "bond_deposited": "0",
                 "integrator_fee_bps": int(integrator_fee_bps),
+                "warranty_seconds": int(warranty_seconds),
+                "warranty_deadline": "",
+                "warranty_hold": "0",
+                "warranty_challenged": False,
+                "inspection_hash": "",
+                "quote_hash": "",
+                "repair_authorized": False,
                 "created_at": now_iso,
                 "evidence_deadline": self._add_seconds(now_iso, evidence_timeout_seconds),
                 "resolution_deadline": self._add_seconds(now_iso, evidence_timeout_seconds + resolution_timeout_seconds),
@@ -192,13 +205,39 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         self.total_escrowed = self.total_escrowed + value
 
     @gl.public.write
+    def submit_inspection_report(self, intent_id: u256, inspection_hash: str, notes: str) -> None:
+        rec = self._intent(intent_id)
+        sender = self._coerce_address(gl.message.sender_address)
+        if sender != Address(rec["requester"]) and sender != Address(rec["fulfiller"]):
+            raise gl.vm.UserError("EXPECTED: only repair parties can inspect")
+        if rec["status"] != STATUS_OPEN or len(inspection_hash) == 0 or len(inspection_hash) > 128:
+            raise gl.vm.UserError("EXPECTED: inspection required before report")
+        rec["inspection_hash"] = self._compact(inspection_hash, 128)
+        rec["inspection_notes"] = self._compact(notes, MAX_NOTES_LEN)
+        rec["status"] = STATUS_INSPECTION_SUBMITTED
+        self._write_intent(intent_id, rec)
+
+    @gl.public.write
+    def authorize_repair(self, intent_id: u256, quote_hash: str) -> None:
+        rec = self._intent(intent_id)
+        sender = self._coerce_address(gl.message.sender_address)
+        if sender != Address(rec["requester"]):
+            raise gl.vm.UserError("EXPECTED: only requester can authorize repair")
+        if rec["status"] != STATUS_INSPECTION_SUBMITTED or len(quote_hash) == 0 or len(quote_hash) > 128:
+            raise gl.vm.UserError("EXPECTED: inspection must be submitted")
+        rec["quote_hash"] = self._compact(quote_hash, 128)
+        rec["repair_authorized"] = True
+        rec["status"] = STATUS_REPAIR_AUTHORIZED
+        self._write_intent(intent_id, rec)
+
+    @gl.public.write
     def submit_repair_evidence(self, intent_id: u256, kind: str, uri_or_text: str, notes: str) -> None:
         rec = self._intent(intent_id)
         sender = self._coerce_address(gl.message.sender_address)
         if sender != Address(rec["fulfiller"]) and sender != Address(rec["requester"]):
             raise gl.vm.UserError("EXPECTED: only party can submit evidence")
-        if rec["status"] != STATUS_OPEN and rec["status"] != STATUS_EVIDENCE_SUBMITTED:
-            raise gl.vm.UserError("EXPECTED: intent not accepting evidence")
+        if rec["status"] != STATUS_REPAIR_AUTHORIZED and rec["status"] != STATUS_EVIDENCE_SUBMITTED:
+            raise gl.vm.UserError("EXPECTED: repair authorization required")
         if bool(rec["settled"]):
             raise gl.vm.UserError("EXPECTED: settled intent")
         if self._after(self._now_iso(), str(rec["evidence_deadline"])):
@@ -233,6 +272,8 @@ class EvidenceGatedIntentEscrow(gl.Contract):
             raise gl.vm.UserError("EXPECTED: settled intent")
         if int(rec["evidence_count"]) == 0:
             raise gl.vm.UserError("EXPECTED: no evidence")
+        if not self._has_before_after(intent_id, int(rec["evidence_count"])):
+            raise gl.vm.UserError("EXPECTED: before and after evidence required")
         now_iso = self._now_iso()
         if self._after(now_iso, str(rec["resolution_deadline"])):
             raise gl.vm.UserError("EXPECTED: resolution deadline passed")
@@ -347,6 +388,37 @@ class EvidenceGatedIntentEscrow(gl.Contract):
             self._u256(rec["payout_to_requester"]),
             self._u256(rec["payout_to_fulfiller"]),
         )
+
+    @gl.public.write
+    def release_warranty_hold(self, intent_id: u256) -> None:
+        rec = self._intent(intent_id)
+        hold = self._u256(rec.get("warranty_hold", "0"))
+        if not bool(rec["settled"]) or hold == u256(0):
+            raise gl.vm.UserError("EXPECTED: no active warranty hold")
+        if self._after(str(rec["warranty_deadline"]), self._now_iso()):
+            raise gl.vm.UserError("EXPECTED: warranty period active")
+        rec["warranty_hold"] = "0"
+        self._write_intent(intent_id, rec)
+        self._send_gen(Address(rec["fulfiller"]), hold)
+        self.total_released = self.total_released + hold
+
+    @gl.public.write
+    def challenge_warranty(self, intent_id: u256, reason: str) -> None:
+        rec = self._intent(intent_id)
+        sender = self._coerce_address(gl.message.sender_address)
+        hold = self._u256(rec.get("warranty_hold", "0"))
+        if sender != Address(rec["requester"]):
+            raise gl.vm.UserError("EXPECTED: only requester can challenge warranty")
+        if not bool(rec["settled"]) or hold == u256(0):
+            raise gl.vm.UserError("EXPECTED: no active warranty hold")
+        if not self._after(str(rec["warranty_deadline"]), self._now_iso()):
+            raise gl.vm.UserError("EXPECTED: warranty period expired")
+        rec["warranty_hold"] = "0"
+        rec["warranty_challenged"] = True
+        rec["verdict_reason"] = self._compact("WARRANTY_CHALLENGE: " + reason, 700)
+        self._write_intent(intent_id, rec)
+        self._send_gen(Address(rec["requester"]), hold)
+        self.total_refunded = self.total_refunded + hold
 
     @gl.public.view
     def get_intent(self, intent_id: u256) -> str:
@@ -469,6 +541,18 @@ class EvidenceGatedIntentEscrow(gl.Contract):
             idx = idx + u32(1)
         return json.dumps(items)
 
+    def _has_before_after(self, intent_id: u256, count: int) -> bool:
+        before = False
+        after = False
+        idx = 0
+        while idx < count:
+            item = self._as_dict(self.ledger[self._evidence_key(intent_id, u32(idx))])
+            kind = str(item.get("kind", ""))
+            before = before or kind == EVIDENCE_BEFORE_PHOTO
+            after = after or kind == EVIDENCE_AFTER_PHOTO
+            idx += 1
+        return before and after
+
     def _acquire_evidence(self, evidence_bundle: str):
         """Fetch and normalize external evidence inside the nondeterministic block."""
         items = self._as_list(evidence_bundle)
@@ -583,14 +667,17 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         bond = self._u256(rec.get("bond_deposited", rec["fulfiller_bond"]))
         fee = self._fee(amount, u32(int(rec["integrator_fee_bps"])))
         fulfiller_amount = amount - fee + bond
+        hold = self._mul_bps(fulfiller_amount, u32(WARRANTY_HOLD_BPS)) if int(rec.get("warranty_seconds", 0)) > 0 else u256(0)
         self._mark_settled(intent_id, rec, VERDICT_SATISFIED, reason)
         rec = self._intent(intent_id)
+        rec["warranty_hold"] = str(hold)
+        rec["warranty_deadline"] = self._add_seconds(self._now_iso(), u64(int(rec.get("warranty_seconds", 0)))) if hold > u256(0) else ""
         rec["payout_to_fulfiller"] = str(fulfiller_amount)
         rec["payout_to_integrator"] = str(fee)
         self._write_intent(intent_id, rec)
         self._send_gen(Address(rec["integrator"]), fee)
-        self._send_gen(Address(rec["fulfiller"]), fulfiller_amount)
-        self.total_released = self.total_released + fulfiller_amount
+        self._send_gen(Address(rec["fulfiller"]), fulfiller_amount - hold)
+        self.total_released = self.total_released + fulfiller_amount - hold
         self.total_fees = self.total_fees + fee
 
     def _settle_not_satisfied(self, intent_id: u256, rec: dict, reason: str) -> None:
@@ -614,17 +701,20 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         fulfiller_base = amount - requester_amount
         fee = self._fee(fulfiller_base, u32(int(rec["integrator_fee_bps"])))
         fulfiller_amount = fulfiller_base - fee + self._u256(rec.get("bond_deposited", rec["fulfiller_bond"]))
+        hold = self._mul_bps(fulfiller_amount, u32(WARRANTY_HOLD_BPS)) if int(rec.get("warranty_seconds", 0)) > 0 else u256(0)
         self._mark_settled(intent_id, rec, VERDICT_PARTIAL, reason)
         rec = self._intent(intent_id)
+        rec["warranty_hold"] = str(hold)
+        rec["warranty_deadline"] = self._add_seconds(self._now_iso(), u64(int(rec.get("warranty_seconds", 0)))) if hold > u256(0) else ""
         rec["payout_to_requester"] = str(requester_amount)
         rec["payout_to_fulfiller"] = str(fulfiller_amount)
         rec["payout_to_integrator"] = str(fee)
         self._write_intent(intent_id, rec)
         self._send_gen(Address(rec["requester"]), requester_amount)
         self._send_gen(Address(rec["integrator"]), fee)
-        self._send_gen(Address(rec["fulfiller"]), fulfiller_amount)
+        self._send_gen(Address(rec["fulfiller"]), fulfiller_amount - hold)
         self.total_refunded = self.total_refunded + requester_amount
-        self.total_released = self.total_released + fulfiller_amount
+        self.total_released = self.total_released + fulfiller_amount - hold
         self.total_fees = self.total_fees + fee
 
     def _mark_settled(self, intent_id: u256, rec: dict, verdict: str, reason: str) -> None:
@@ -675,6 +765,12 @@ class EvidenceGatedIntentEscrow(gl.Contract):
             "created_at": str(rec["created_at"]),
             "evidence_deadline": str(rec["evidence_deadline"]),
             "resolution_deadline": str(rec["resolution_deadline"]),
+            "inspection_hash": str(rec.get("inspection_hash", "")),
+            "quote_hash": str(rec.get("quote_hash", "")),
+            "warranty_seconds": int(rec.get("warranty_seconds", 0)),
+            "warranty_deadline": str(rec.get("warranty_deadline", "")),
+            "warranty_hold": str(rec.get("warranty_hold", "0")),
+            "warranty_challenged": bool(rec.get("warranty_challenged", False)),
             "status": str(rec["status"]),
             "verdict": str(rec["verdict"]),
             "verdict_reason": str(rec["verdict_reason"]),
