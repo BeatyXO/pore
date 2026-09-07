@@ -24,3 +24,5 @@ The corrected-source StudioNet deployment completed on 2026-09-07:
 - Negative-path live write: unfunded `create_repair_case` correctly rolled back with `EXPECTED: escrow amount required`, while the transaction itself reached `ACCEPTED / MAJORITY_AGREE`.
 
 The corrected source independently verifies warranty-failure claims through validator consensus and exposes held warranty reserves separately from amounts actually paid. The new deployment is the authoritative source for the redesigned appeal.
+
+The funded integration lifecycle was rerun against this deployment with publicly retrievable paired image evidence (`https://httpbin.org/image/jpeg` and `https://httpbin.org/image/png`): create → inspection → authorization → paired evidence → resolve completed successfully, with deterministic PARTIAL settlement assertions passing.

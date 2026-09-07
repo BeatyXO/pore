@@ -12,7 +12,7 @@ from gltest_cli.config.general import get_general_config
 
 
 CONTRACT = "EvidenceGatedIntentEscrow"
-DEPLOYED_ADDRESS = "0x9aFF0D370feeE662c3a4f1fc115D1c9Bc60F7c70"
+DEPLOYED_ADDRESS = "0x3378Bc396b4d99F443085C3fC958875D34AAE979"
 ZERO = "0x0000000000000000000000000000000000000000"
 GEN = 10**16
 
@@ -48,8 +48,8 @@ def test_live_create_evidence_resolve_cycle(default_account):
     assert tx_execution_succeeded(opened)
     contract.submit_inspection_report(args=[base, "inspection-hash-001", "inspection complete"]).transact(transaction_context=context())
     contract.authorize_repair(args=[base, "quote-hash-001"]).transact(transaction_context=context())
-    contract.submit_repair_evidence(args=[base, "BEFORE_PHOTO", "https://example.com/before.jpg", "before photo"]).transact(transaction_context=context())
-    evidence = contract.submit_repair_evidence(args=[base, "AFTER_PHOTO", "https://example.com/after.jpg", "after photo"]).transact(transaction_context=context())
+    contract.submit_repair_evidence(args=[base, "BEFORE_PHOTO", "https://httpbin.org/image/jpeg", "before photo"]).transact(transaction_context=context())
+    evidence = contract.submit_repair_evidence(args=[base, "AFTER_PHOTO", "https://httpbin.org/image/png", "after photo"]).transact(transaction_context=context())
     assert tx_execution_succeeded(evidence)
     resolved = contract.resolve(args=[base]).transact(transaction_context=context("PARTIAL", True, ["roof"]))
     assert tx_execution_succeeded(resolved)
