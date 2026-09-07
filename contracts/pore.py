@@ -58,8 +58,9 @@ class IPOREConsumer:
             requester: Address,
             fulfiller: Address,
             verdict: str,
-            payout_to_requester: u256,
-            payout_to_fulfiller: u256,
+            paid_to_requester: u256,
+            paid_to_fulfiller: u256,
+            held_warranty_reserve: u256,
         ) -> None:
             pass
         def on_warranty_disposition(self, intent_id: u256, disposition: str, paid_to_requester: u256, held_reserve: u256) -> None:
@@ -388,8 +389,9 @@ class EvidenceGatedIntentEscrow(gl.Contract):
             Address(rec["requester"]),
             Address(rec["fulfiller"]),
             str(rec["verdict"]),
-            self._u256(rec["payout_to_requester"]),
+            self._u256(rec.get("paid_to_requester", "0")),
             self._u256(rec.get("paid_to_fulfiller", rec["payout_to_fulfiller"])),
+            self._u256(rec.get("held_warranty_reserve", "0")),
         )
 
     @gl.public.write
@@ -427,7 +429,7 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         rec["warranty_challenged"] = True
         rec["held_warranty_reserve"] = "0"
         rec["verdict_reason"] = self._compact("WARRANTY_CHALLENGE: " + reason, 700)
-        rec["paid_to_requester"] = str(hold)
+        rec["paid_to_requester"] = str(self._u256(rec.get("paid_to_requester", "0")) + hold)
         self._write_intent(intent_id, rec)
         self._send_gen(Address(rec["requester"]), hold)
         self.total_refunded = self.total_refunded + hold
@@ -702,6 +704,8 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         self._mark_settled(intent_id, rec, VERDICT_NOT_SATISFIED, reason)
         rec = self._intent(intent_id)
         rec["payout_to_requester"] = str(requester_amount)
+        rec["paid_to_requester"] = str(self._u256(rec.get("paid_to_requester", "0")) + requester_amount)
+        rec["paid_to_requester"] = str(self._u256(rec.get("paid_to_requester", "0")) + requester_amount)
         self._write_intent(intent_id, rec)
         self._send_gen(Address(rec["requester"]), requester_amount)
         self.total_refunded = self.total_refunded + requester_amount
