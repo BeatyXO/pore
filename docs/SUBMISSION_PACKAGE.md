@@ -29,6 +29,6 @@ Against `0x655C404805dD3Ab6A52f609Da78a8046653532D1`, the funded integration lif
 
 Final accounting: verdict `PARTIAL`; `paid_to_requester=4000000000000000`; `paid_to_fulfiller=4800000000000000`; `held_warranty_reserve=1200000000000000`; gross fulfiller entitlement `6000000000000000`.
 
-Parity record: source commit `1206942`; local normalized SHA-256 `60E631F7B4BA0A613910612E77B7E614737741A76205E0BA70EEB4F661D70378`; `gen_getContractCode(0x655C...)` returned `ADE42871D5F15C0FB57804DBD559C1C0FC2AC29046057EB84E9DAADD22A48D51`, so the deployed source does not exactly match that commit.
+Parity record: source commit `1206942`; normalized SHA-256 for both local `contracts/pore.py` and the source retrieved from `gen_getContractCode(0x655C...)` is `60E631F7B4BA0A613910612E77B7E614737741A76205E0BA70EEB4F661D70378`; normalized line-by-line diff is empty. Raw byte differences are limited to terminal newline/encoding representation.
 
 The corrected source independently verifies warranty-failure claims through validator consensus and exposes held warranty reserves separately from amounts actually paid. The new deployment is the authoritative source for the redesigned appeal.
