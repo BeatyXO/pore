@@ -9,7 +9,7 @@ PORE is intentionally contract-only and composable. It is suitable for property 
 - **Network:** GenLayer StudioNet
 - **Chain ID:** `61999`
 - **Contract:** `0x655C404805dD3Ab6A52f609Da78a8046653532D1`
-- **Studio Explorer:** [open PORE on GenLayer Explorer](https://explorer-studio.genlayer.com/address/0xDCe6E088A2E0C590a0526e399Fdd8823FafDcEb5)
+- **Studio Explorer:** [open PORE on GenLayer Explorer](https://explorer-studio.genlayer.com/address/0x655C404805dD3Ab6A52f609Da78a8046653532D1)
 - **Deployment transaction:** `0x712f09e24487ffed2af4aefc336e7b1accf917cdf61235f9afadc495b5eb7eaf`
 
 The redesigned source adds inspection and quote authorization gates before repair evidence is accepted, paired before/after evidence enforcement, a recorded warranty duration, a held warranty reserve, and requester warranty challenges.
