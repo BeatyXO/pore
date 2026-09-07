@@ -12,7 +12,7 @@ from gltest_cli.config.general import get_general_config
 
 
 CONTRACT = "EvidenceGatedIntentEscrow"
-DEPLOYED_ADDRESS = "0xDCe6E088A2E0C590a0526e399Fdd8823FafDcEb5"
+DEPLOYED_ADDRESS = "0x655C404805dD3Ab6A52f609Da78a8046653532D1"
 ZERO = "0x0000000000000000000000000000000000000000"
 GEN = 10**16
 
@@ -68,7 +68,10 @@ def test_live_mutual_split_requires_exact_same_bps(default_account):
     base = int(json.loads(requester_contract.stats(args=[]).call())["next_intent_id"])
     opened = requester_contract.create_repair_case(args=[repairer.address, "Repair panel", "Evidence required", '[{"id":"panel","weight_bps":10000}]', 1800, 1800, ZERO, ZERO, 0, 86400]).transact(value=GEN, transaction_context=context())
     assert tx_execution_succeeded(opened)
-    evidence = requester_contract.submit_repair_evidence(args=[base, "TEXT", "ambiguous repair report", "review required"]).transact(transaction_context=context())
+    requester_contract.submit_inspection_report(args=[base, "inspection-mutual-001", "inspection complete"]).transact(transaction_context=context())
+    requester_contract.authorize_repair(args=[base, "quote-mutual-001"]).transact(transaction_context=context())
+    requester_contract.submit_repair_evidence(args=[base, "BEFORE_PHOTO", "https://httpbin.org/image/jpeg", "before photo"]).transact(transaction_context=context())
+    evidence = requester_contract.submit_repair_evidence(args=[base, "AFTER_PHOTO", "https://httpbin.org/image/png", "after photo"]).transact(transaction_context=context())
     assert tx_execution_succeeded(evidence)
     unresolved = requester_contract.resolve(args=[base]).transact(transaction_context=context("INCONCLUSIVE", False))
     assert tx_execution_succeeded(unresolved)

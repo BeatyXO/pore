@@ -14,8 +14,8 @@ The contract is branded PORE (Proof-of-Repair Escrow). The stable class name is 
 
 The corrected-source StudioNet deployment completed on 2026-09-07:
 
-- Contract: `0xDCe6E088A2E0C590a0526e399Fdd8823FafDcEb5`
-- Deployment transaction: `0x56b263ff5b79651176b7b89caee3ece91f3721fdf902b9e0c37a5d2d28c4c930`
+- Contract: `0x655C404805dD3Ab6A52f609Da78a8046653532D1`
+- Deployment transaction: `0x712f09e24487ffed2af4aefc336e7b1accf917cdf61235f9afadc495b5eb7eaf`
 - Status: `ACCEPTED`
 - Result: `MAJORITY_AGREE`
 - Validators: 5 votes revealed; quorum reached in round 0.
@@ -24,5 +24,3 @@ The corrected-source StudioNet deployment completed on 2026-09-07:
 - Negative-path live write: unfunded `create_repair_case` correctly rolled back with `EXPECTED: escrow amount required`, while the transaction itself reached `ACCEPTED / MAJORITY_AGREE`.
 
 The corrected source independently verifies warranty-failure claims through validator consensus and exposes held warranty reserves separately from amounts actually paid. The new deployment is the authoritative source for the redesigned appeal.
-
-The funded integration lifecycle was rerun against this deployment with publicly retrievable paired image evidence (`https://httpbin.org/image/jpeg` and `https://httpbin.org/image/png`): create → inspection → authorization → paired evidence → resolve completed successfully, with deterministic PARTIAL settlement assertions passing.
