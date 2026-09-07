@@ -63,7 +63,7 @@ class IPOREConsumer:
             held_warranty_reserve: u256,
         ) -> None:
             pass
-        def on_warranty_disposition(self, intent_id: u256, disposition: str, paid_to_requester: u256, held_reserve: u256) -> None:
+        def on_warranty_disposition(self, intent_id: u256, disposition: str, paid_to_requester_delta: u256, paid_to_fulfiller_delta: u256, remaining_reserve: u256) -> None:
             pass
 
 
@@ -317,6 +317,7 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         self._mark_settled(intent_id, rec, VERDICT_INCONCLUSIVE, "Deadline passed without conclusive settlement")
         rec = self._intent(intent_id)
         rec["payout_to_requester"] = str(requester_amount)
+        rec["paid_to_requester"] = str(self._u256(rec.get("paid_to_requester", "0")) + requester_amount)
         rec["payout_to_fulfiller"] = str(fulfiller_amount)
         self._write_intent(intent_id, rec)
         self._send_gen(Address(rec["requester"]), requester_amount)
@@ -341,6 +342,7 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         rec = self._intent(intent_id)
         rec["status"] = STATUS_CANCELLED
         rec["payout_to_requester"] = str(requester_amount)
+        rec["paid_to_requester"] = str(self._u256(rec.get("paid_to_requester", "0")) + requester_amount)
         rec["payout_to_fulfiller"] = str(fulfiller_amount)
         self._write_intent(intent_id, rec)
         self.cancelled_intents = self.cancelled_intents + u256(1)
@@ -410,7 +412,7 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         self.total_released = self.total_released + hold
         callback = Address(rec["callback"])
         if not self._is_zero(callback):
-            IPOREConsumer(callback).emit(on="warranty").on_warranty_disposition(intent_id, "RELEASED", u256(0), u256(0))
+            IPOREConsumer(callback).emit(on="warranty").on_warranty_disposition(intent_id, "RELEASED", u256(0), hold, u256(0))
 
     @gl.public.write
     def challenge_warranty(self, intent_id: u256, evidence_source: str, reason: str) -> None:
@@ -435,7 +437,7 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         self.total_refunded = self.total_refunded + hold
         callback = Address(rec["callback"])
         if not self._is_zero(callback):
-            IPOREConsumer(callback).emit(on="warranty").on_warranty_disposition(intent_id, "FORFEITED", hold, u256(0))
+            IPOREConsumer(callback).emit(on="warranty").on_warranty_disposition(intent_id, "FORFEITED", hold, u256(0), u256(0))
 
     @gl.public.view
     def get_intent(self, intent_id: u256) -> str:
@@ -705,7 +707,6 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         rec = self._intent(intent_id)
         rec["payout_to_requester"] = str(requester_amount)
         rec["paid_to_requester"] = str(self._u256(rec.get("paid_to_requester", "0")) + requester_amount)
-        rec["paid_to_requester"] = str(self._u256(rec.get("paid_to_requester", "0")) + requester_amount)
         self._write_intent(intent_id, rec)
         self._send_gen(Address(rec["requester"]), requester_amount)
         self.total_refunded = self.total_refunded + requester_amount
@@ -747,6 +748,7 @@ class EvidenceGatedIntentEscrow(gl.Contract):
         rec["warranty_hold"] = str(hold)
         rec["warranty_deadline"] = self._add_seconds(self._now_iso(), u64(int(rec.get("warranty_seconds", 0)))) if hold > u256(0) else ""
         rec["payout_to_requester"] = str(requester_amount)
+        rec["paid_to_requester"] = str(self._u256(rec.get("paid_to_requester", "0")) + requester_amount)
         rec["payout_to_fulfiller"] = str(fulfiller_amount)
         rec["paid_to_fulfiller"] = str(fulfiller_amount - hold)
         rec["held_warranty_reserve"] = str(hold)
